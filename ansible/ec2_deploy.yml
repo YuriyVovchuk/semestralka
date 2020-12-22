@@ -54,7 +54,7 @@
       become: yes
     - name: Get project files from git
       git:
-        repo: 'https://github.com/dolotinaelvira/repository.git'
+        repo: 'https://github.com/YuriyVovchuk/semestralka.git'
         dest: ./app
     - name: Build docker with eshop
       shell: cd app && docker build -t myeshop:latest .
