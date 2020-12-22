@@ -1,0 +1,86 @@
+- name: Deploy to ec2
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Locate running EC2 instances
+      ec2_instance_info:
+        region: us-east-1
+        aws_access_key: ASIASHM24H7Q2F5NUQJM
+        aws_secret_key: MolWDkDqnIXCgHZ3DLRybhgIrRW68m5JVmGpq5q0
+        security_token: FwoGZXIvYXdzEBUaDEr0svQ0qnezWeRzQCLBAVHaLLkh54uNe3UKnzVG4t9IF3jlJZ2GfKoURcUUFCTZdnTTsPUpyaaehsrmXmkHo+Jw/R6UbU08av3i34JBocu/QoUkP1lsRlNDVbUvvyihBRjFI3eOJIbymh/v46RIKwXsQjCbmQeUFVHkIjHIxyejMY5/Iy+IAu0hzgJeMpSzGahfEEh2fLFDYwJtZ5/ZR/ngOgPRUa3fG11cukG5v+NTryv0EU+fR3k+fz61IhLHIsiodofZ7luUfGKhNTNfkQ0ou4+J/wUyLYIazb3tpKeUTWFaQtyjCwaYAx56R+YMK72flllfSKr9xlxHU7Vu03KpsXKDyw==
+      register: info
+
+    - name: Launch EC2 instance
+      ec2:
+        instance_type: t2.small
+        image: ami-00ddb0e5626798373
+        region: us-east-1
+        key_name: key1
+        vpc_subnet_id: subnet-d730b3f6
+        assign_public_ip: yes
+        wait: yes
+        count: 1
+        group: eshop
+        aws_access_key: ASIASHM24H7Q2F5NUQJM
+        aws_secret_key: MolWDkDqnIXCgHZ3DLRybhgIrRW68m5JVmGpq5q0
+        security_token: FwoGZXIvYXdzEBUaDEr0svQ0qnezWeRzQCLBAVHaLLkh54uNe3UKnzVG4t9IF3jlJZ2GfKoURcUUFCTZdnTTsPUpyaaehsrmXmkHo+Jw/R6UbU08av3i34JBocu/QoUkP1lsRlNDVbUvvyihBRjFI3eOJIbymh/v46RIKwXsQjCbmQeUFVHkIjHIxyejMY5/Iy+IAu0hzgJeMpSzGahfEEh2fLFDYwJtZ5/ZR/ngOgPRUa3fG11cukG5v+NTryv0EU+fR3k+fz61IhLHIsiodofZ7luUfGKhNTNfkQ0ou4+J/wUyLYIazb3tpKeUTWFaQtyjCwaYAx56R+YMK72flllfSKr9xlxHU7Vu03KpsXKDyw==
+      register: ec2
+
+    - name: Add instance host to group
+      add_host: hostname={{ item.public_dns_name }} groupname=launched
+      with_items: '{{ec2.instances}}'
+
+    - name: Wait for SSH connection
+      wait_for: host={{ item.public_dns_name }} port=22 delay=30 timeout=300 state=started
+      with_items: '{{ec2.instances}}'
+
+- name: Configure EC2
+  hosts: launched
+  connection: ssh
+  
+  tasks:
+    - name: Install docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+     
+      become: yes
+    - service:
+        name: docker
+        state: started
+        enabled: yes
+      become: yes
+    - name: Get project files from git
+      git:
+        repo: 'https://github.com/dolotinaelvira/repository.git'
+        dest: ./app
+    - name: Build docker with eshop
+      shell: cd app && docker build -t myeshop:latest .
+      become: yes
+    - name: Run Docker with eshop
+      shell: docker run -p 80:3000 myeshop
+      async: 90
+      poll: 0
+      become: yes
+    - wait_for:
+        port: 80
+
+- name: Terminate instances
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Terminate previous instances
+      ec2:
+        region: us-east-1
+        state: 'absent'
+        instance_ids: '{{ item.instance_id }}'
+        aws_access_key: ASIASHM24H7Q2F5NUQJM
+        aws_secret_key: MolWDkDqnIXCgHZ3DLRybhgIrRW68m5JVmGpq5q0
+        security_token: FwoGZXIvYXdzEBUaDEr0svQ0qnezWeRzQCLBAVHaLLkh54uNe3UKnzVG4t9IF3jlJZ2GfKoURcUUFCTZdnTTsPUpyaaehsrmXmkHo+Jw/R6UbU08av3i34JBocu/QoUkP1lsRlNDVbUvvyihBRjFI3eOJIbymh/v46RIKwXsQjCbmQeUFVHkIjHIxyejMY5/Iy+IAu0hzgJeMpSzGahfEEh2fLFDYwJtZ5/ZR/ngOgPRUa3fG11cukG5v+NTryv0EU+fR3k+fz61IhLHIsiodofZ7luUfGKhNTNfkQ0ou4+J/wUyLYIazb3tpKeUTWFaQtyjCwaYAx56R+YMK72flllfSKr9xlxHU7Vu03KpsXKDyw==
+
+      loop: "{{ info.instances }}"
+      loop_control:
+        label: "{{ item.instance_id }}"
